@@ -56,12 +56,16 @@ int lastRudder = 0;
 
 void loop() 
 {
+  bool changed = false;
+
   for (int i = 0; i < sizeof(ButonPinleri) / sizeof(int); i++) {
     int durum = digitalRead(ButonPinleri[i]);
     if (durum == HIGH) {
       Joystick.pressButton(i);
+      changed = true;
     } else {
       Joystick.releaseButton(i); 
+      changed = true;
     }
   }
 
@@ -72,59 +76,93 @@ void loop()
   if (AcceleratorValue != lastAccelerator){
     lastAccelerator = AcceleratorValue;
     Joystick.setAccelerator(AcceleratorValue);
+    changed = true;
   }
 
   if (BreakValue != lastBreak){
     BreakValue = lastBreak;
     Joystick.setBrake(BreakValue);
+    changed = true;
   }
 
   if (RudderValue != lastRudder){
     RudderValue = lastRudder;
     Joystick.setRudder(RudderValue);
+    changed = true;
   }
 
   int16_t rotaryEncINewPosition = constrain(rotaryEncI.read(),-32768,32768);
   if (rotaryEncINewPosition != rotaryEncIOldPosition) {
     rotaryEncIOldPosition = rotaryEncINewPosition;
     Joystick.setSteering(constrain(360*(rotaryEncINewPosition/kalb),-int(aci/2),int(aci/2)));
+    changed = true;
   }
 
   check_serial();
-
-  Joystick.sendState();
+  if (changed){
+    Joystick.sendState();
+  }
 }
 
 void check_serial(){
-  if (Serial.available()) {
+  if (Serial.available() > 0) {
+    bool newData = false;
+    static boolean recvInProgress = false;
+    static byte ndx = 0;
+    char startMarker = '<';
+    char endMarker = '\n';
+    char rc;
     // Veri geldiğinde
-    byte boyut = Serial.read(); // İlk byte, veri boyutunu belirtir
-    byte dizi[boyut]; // Veri boyutu kadar dizi oluştur
+    byte numChars = Serial.read(); // İlk byte, veri boyutunu belirtir
+    byte receivedChars[numChars]; // Veri boyutu kadar dizi oluştur
+    while (Serial.available() > 0 && newData == false){
+      rc = Serial.read();
 
-    for (int i = 0; i < boyut; i++) {
-      dizi[i] = Serial.read(); // Veriyi diziye oku
+        if (recvInProgress == true) {
+            if (rc != endMarker) {
+                receivedChars[ndx] = rc;
+                ndx++;
+                if (ndx >= numChars) {
+                    ndx = numChars - 1;
+                }
+            }
+            else {
+                receivedChars[ndx] = '\0'; // terminate the string
+                recvInProgress = false;
+                ndx = 0;
+                newData = true;
+            }
+        }
+
+        else if (rc == startMarker) {
+            recvInProgress = true;
+        }
     }
 
     //PPR komutu
-    if (dizi[0] == 0){
-      PPR = int(dizi[1]);
+    if (int(receivedChars[0]) == 0){
+      for (int i = 0; i < numChars; i++){
+        PPR += int(receivedChars[i]);
+      }
       kalb = (aci/180)*PPR;
     }
 
     //Buton komutu
-    if (dizi[0] == 1){
+    if (int(receivedChars[0]) == 1){
       for (int i = 0; i < sizeof(ButonPinleri) / sizeof(int); i++) {
         ButonPinleri[i] = 32;
       }
-      for(int i = 1; i<boyut; i++){
-        ButonPinleri[i] =  dizi[i];
+      for(int i = 1; i < numChars; i++){
+        ButonPinleri[i] =  receivedChars[i];
       }
       setup_button_pins();
     }
 
     //Açı sistemi
-    if (dizi[0] == 2){
-      Joystick.setSteeringRange(dizi[1],dizi[2]);
+    if (int(receivedChars[0]) == 2){
+      aci = receivedChars[3];
+      kalb = (aci/180)*PPR;
+      Joystick.setSteeringRange(receivedChars[1],receivedChars[2]);
     }
   }
 }
