@@ -16,4 +16,4 @@ Ben bu projem için [Arduino Leonardo](https://docs.arduino.cc/hardware/leonardo
 + 1 tane bts7960b motor sürücü
 
 ----
-Eğer mu malzemeleri temin edemiyorsanız yazdığım kodu istediğiniz gibi editleyip kendi parçalarınız için uyarlayabilirsiniz.
+Eğer bu malzemeleri temin edemiyorsanız yazdığım kodu istediğiniz gibi editleyip kendi parçalarınız için uyarlayabilirsiniz.
