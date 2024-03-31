@@ -1,5 +1,7 @@
 #include "Encoder.h"
 #include "Joystick.h"
+#include "Arduino.h"
+#include "ArduinoJson.h"
 
 // Pin Definitions
 #define ROTARYENCI_PIN_CLK	2
@@ -13,7 +15,7 @@
 long rotaryEncIOldPosition  = 0;
 
 int ButonPinleri[] = {};
-int PPR = 1000;
+int16_t PPR = 1000;
 int aci = 900;
 double kalb = (aci/180)*PPR;
 
@@ -29,6 +31,14 @@ void setup_button_pins(){
   for (int i = 0; i < sizeof(ButonPinleri) / sizeof(int); i++) {
     pinMode(ButonPinleri[i], INPUT_PULLUP);
   }
+}
+
+double calculate_kalb(){
+  return (aci/180)*PPR;
+}
+
+void change_PPR(int16_t target){
+  PPR = target;
 }
 
 void setup() 
@@ -104,65 +114,31 @@ void loop()
   }
 }
 
+JsonDocument doc;
+
 void check_serial(){
   if (Serial.available() > 0) {
-    bool newData = false;
-    static boolean recvInProgress = false;
-    static byte ndx = 0;
-    char startMarker = '<';
-    char endMarker = '\n';
-    char rc;
-    // Veri geldiğinde
-    byte numChars = Serial.read(); // İlk byte, veri boyutunu belirtir
-    byte receivedChars[numChars]; // Veri boyutu kadar dizi oluştur
-    while (Serial.available() > 0 && newData == false){
-      rc = Serial.read();
-
-        if (recvInProgress == true) {
-            if (rc != endMarker) {
-                receivedChars[ndx] = rc;
-                ndx++;
-                if (ndx >= numChars) {
-                    ndx = numChars - 1;
-                }
-            }
-            else {
-                receivedChars[ndx] = '\0'; // terminate the string
-                recvInProgress = false;
-                ndx = 0;
-                newData = true;
-            }
-        }
-
-        else if (rc == startMarker) {
-            recvInProgress = true;
-        }
-    }
-
-    //PPR komutu
-    if (int(receivedChars[0]) == 0){
-      for (int i = 0; i < numChars; i++){
-        PPR += int(receivedChars[i]);
+    String str = Serial.readStringUntil(char("}"));
+    // Tam JSON verisi alındığında işleme
+    if (str.startsWith("{")&&(str.endsWith("}"))) {
+      DeserializationError error = deserializeJson(doc, str);
+      if (error){
+        Serial.print(error.f_str());
+        Serial.print(";");
+        Serial.print(str);
+        return;
       }
-      kalb = (aci/180)*PPR;
-    }
 
-    //Buton komutu
-    if (int(receivedChars[0]) == 1){
-      for (int i = 0; i < sizeof(ButonPinleri) / sizeof(int); i++) {
-        ButonPinleri[i] = 32;
-      }
-      for(int i = 1; i < numChars; i++){
-        ButonPinleri[i] =  receivedChars[i];
-      }
-      setup_button_pins();
-    }
+      Joystick.setSteeringRange(doc["aci"][0],doc["aci"][1]);
+      aci = doc["aci"][2];
+      change_PPR(doc["ppr"]);
+      kalb = calculate_kalb();
+      
+      memset(ButonPinleri, 0, sizeof(ButonPinleri));
 
-    //Açı sistemi
-    if (int(receivedChars[0]) == 2){
-      aci = receivedChars[3];
-      kalb = (aci/180)*PPR;
-      Joystick.setSteeringRange(receivedChars[1],receivedChars[2]);
+      for (uint8_t i=0; i<doc["butons"].size(); i++) {
+        ButonPinleri[i] = doc["butons"][i];
+      }
     }
   }
 }
